@@ -26,7 +26,7 @@ def capture_record():
         picam2 = Picamera2()
         
         # set framerate
-        framerate = 10
+        framerate = 30
         
         # configure picamera2
         config = picam2.create_video_configuration(main={"size": (1920, 1080)})

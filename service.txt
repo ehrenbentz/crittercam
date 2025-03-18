@@ -3,12 +3,8 @@ Description=Critter Cam motion detection camera
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/crittercam/cam.py
-WorkingDirectory=/home/pi/crittercam
-StandardOutput=inherit
-StandardError=inherit
+ExecStart=/home/cody/picam/bin/python3 /home/cody/crittercam/cam.py
 Restart=always
-User=pi
 
 [Install]
 WantedBy=multi-user.target
