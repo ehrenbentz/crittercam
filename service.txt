@@ -3,7 +3,7 @@ Description=Critter Cam motion detection camera
 After=multi-user.target
 
 [Service]
-ExecStart=/home/cody/picam/bin/python3 /home/cody/crittercam/cam.py
+ExecStart=/home/pi5/picam/bin/python3 /home/pi5/crittercam/cam.py
 Restart=always
 
 [Install]
