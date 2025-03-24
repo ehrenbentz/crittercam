@@ -5,7 +5,7 @@ import threading
 import os
 import time
 import datetime
-import numpy as np  # We need this for comparing images
+import numpy as np
 
 # Initialize global camera variables
 picam2 = None
@@ -40,6 +40,12 @@ def capture_record():
         # Recording settings
         recording_duration = 60
         frames_to_record = (recording_duration * framerate)
+
+        # Motion detection settings
+        reset_frame_seconds = 5  # Reset reference frame every 5 seconds
+        motion_threshold = 5     # Number of consecutive motion detections before recording
+        min_contour_area = 1000  # Minimum size of motion to detect (increase to reduce sensitivity)
+        abs_threshold = 30       # Threshold for pixel change detection
 
         # Create time stamp for video file
         current_time = datetime.datetime.now()
@@ -78,6 +84,8 @@ def capture_record():
         video_writer = None
         is_recording = False
         frames_recorded = 0
+        motion_counter = 0
+        last_frame_reset = time.time()
 
         # Start motion detection
         while True:
@@ -89,11 +97,18 @@ def capture_record():
                 gray_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
                 gray_frame = cv2.GaussianBlur(gray_frame, (21, 21), 0)
 
+                # Check if it's time to reset the reference frame (every 5 seconds)
+                current_time = time.time()
+                if (current_time - last_frame_reset) >= reset_frame_seconds and not is_recording:
+                    first_frame = gray_frame.copy()
+                    last_frame_reset = current_time
+                    print(f"Reference frame reset at {datetime.datetime.now().strftime('%H:%M:%S')}")
+
                 # Find the difference between the "first frame" and this new one
                 frame_delta = cv2.absdiff(first_frame, gray_frame)
 
                 # Make the differences more obvious - if pixels changed a lot, make them white
-                thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+                thresh = cv2.threshold(frame_delta, abs_threshold, 255, cv2.THRESH_BINARY)[1]
 
                 # Clean up the image to see changes better
                 thresh = cv2.dilate(thresh, None, iterations=2)
@@ -107,7 +122,7 @@ def capture_record():
                 # Look at each outline we found
                 for contour in contours:
                         # Only care about big enough changes (ignore tiny movements)
-                        if cv2.contourArea(contour) < 500:  # This number controls sensitivity
+                        if cv2.contourArea(contour) < min_contour_area:
                                 continue
 
                         # If we get here, something big enough moved!
@@ -117,47 +132,59 @@ def capture_record():
                         (x, y, w, h) = cv2.boundingRect(contour)
                         cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-                # If motion is detected and the pi is not already recording, start recording
-                if motion_detected and not is_recording:
-                        print("Motion detected! Starting to record...")
-                        video_writer = init_video_writer(color_frame, framerate, video_filename)
-                        is_recording = True
-                        frames_recorded = 0
+                # Handle motion detection counter
+                if motion_detected:
+                    motion_counter += 1
+                    if motion_counter == 1:
+                        print(f"Initial motion detected at {datetime.datetime.now().strftime('%H:%M:%S')}")
+                else:
+                    # Reset counter if no motion is detected
+                    motion_counter = 0
+
+                # If motion threshold is reached and not already recording, start recording
+                if motion_counter >= motion_threshold and not is_recording:
+                    print(f"Motion threshold reached ({motion_threshold})! Starting to record...")
+                    video_writer = init_video_writer(color_frame, framerate, video_filename)
+                    is_recording = True
+                    frames_recorded = 0
+                    # Don't reset reference frame during recording
 
                 # Record video
                 if is_recording:
-                        # Write frame to video file
-                        video_writer.write(color_frame)
-                        frames_recorded += 1
+                    # Write frame to video file
+                    video_writer.write(color_frame)
+                    frames_recorded += 1
 
-                        # Stop recording after we've recorded enough frames
-                        if frames_recorded >= frames_to_record:
-                                print(f"Recording stopped: {video_filename}")
-                                video_writer.release()
+                    # Stop recording after we've recorded enough frames
+                    if frames_recorded >= frames_to_record:
+                        print(f"Recording stopped: {video_filename}")
+                        video_writer.release()
 
-                                # Create a new video filename for next time
-                                current_time = datetime.datetime.now()
-                                timestamp = current_time.strftime("%H-%M-%S_%b-%d-%Y")
-                                date_today = current_time.strftime("%Y-%m-%d")
+                        # Create a new video filename for next time
+                        current_time = datetime.datetime.now()
+                        timestamp = current_time.strftime("%H-%M-%S_%b-%d-%Y")
+                        date_today = current_time.strftime("%Y-%m-%d")
 
-                                # Update folder path with current date
-                                folder_path = f"/mnt/usb/{date_today}"
+                        # Update folder path with current date
+                        folder_path = f"/mnt/usb/{date_today}"
 
-                                # Make sure the directory exists
-                                if not os.path.exists(folder_path):
-                                    try:
-                                        os.makedirs(folder_path)
-                                        print(f"Created folder: {folder_path}")
-                                    except Exception as e:
-                                        print(f"Error creating folder {folder_path}: {e}")
+                        # Make sure the directory exists
+                        if not os.path.exists(folder_path):
+                            try:
+                                os.makedirs(folder_path)
+                                print(f"Created folder: {folder_path}")
+                            except Exception as e:
+                                print(f"Error creating folder {folder_path}: {e}")
 
-                                video_filename = f"{folder_path}/{timestamp}.mp4"
+                        video_filename = f"{folder_path}/{timestamp}.mp4"
 
-                                # Reset recording state
-                                is_recording = False
+                        # Reset recording state
+                        is_recording = False
+                        motion_counter = 0
 
-                                # Update our reference frame after recording
-                                first_frame = gray_frame.copy()
+                        # Update our reference frame after recording
+                        first_frame = gray_frame.copy()
+                        last_frame_reset = time.time()
 
                 # Add a delay to control the framerate
                 time.sleep(1/framerate)
